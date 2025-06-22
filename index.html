@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Background Webcam</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Virtual Background Webcam</h1>
+        
+        <div class="video-container">
+            <video id="video" autoplay muted playsinline></video>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="cameraSelect">Camera:</label>
+                <select id="cameraSelect">
+                    <option value="">Select Camera...</option>
+                </select>
+            </div>
+
+            <div class="button-group">
+                <button id="startBtn" class="start-btn">Start Camera</button>
+                <button id="stopBtn" class="stop-btn" disabled>Stop Camera</button>
+            </div>
+        </div>
+
+        <div id="status" class="status inactive">
+            Click "Start Camera" to begin. Camera permissions will be requested when you start.
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
