@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Virtual Background Webcam</title>
     <link rel="stylesheet" href="style.css">
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+    <!-- MediaPipe Selfie Segmentation -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1"></script>
+    <!-- TensorFlow.js Body Segmentation -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-segmentation@latest"></script>
 </head>
 <body>
     <div class="container">
@@ -12,6 +18,7 @@
         
         <div class="video-container">
             <video id="video" autoplay muted playsinline></video>
+            <canvas id="outputCanvas" style="display: none;"></canvas>
         </div>
 
         <div class="controls">
@@ -23,8 +30,15 @@
             </div>
 
             <div class="button-group">
-                <button id="startBtn" class="start-btn">Start Camera</button>
-                <button id="stopBtn" class="stop-btn" disabled>Stop Camera</button>
+                <button id="cameraBtn" class="start-btn">Start Camera</button>
+            </div>
+
+            <div class="effects-group">
+                <button id="blurToggleBtn" class="blur-btn" disabled>Enable Background Blur</button>
+                <div id="loadingIndicator" class="loading-indicator" style="display: none;">
+                    <div class="loading-spinner"></div>
+                    <span id="loadingText">Loading AI model...</span>
+                </div>
             </div>
         </div>
 
