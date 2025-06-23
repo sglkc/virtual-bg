@@ -9,6 +9,18 @@ class VirtualBackgroundApp {
         this.loadingText = document.getElementById('loadingText');
         this.status = document.getElementById('status');
         
+        // Settings panel elements
+        this.foregroundThresholdSlider = document.getElementById('foregroundThreshold');
+        this.foregroundThresholdValue = document.getElementById('foregroundThresholdValue');
+        this.backgroundBlurSlider = document.getElementById('backgroundBlur');
+        this.backgroundBlurValue = document.getElementById('backgroundBlurValue');
+        this.edgeBlurSlider = document.getElementById('edgeBlur');
+        this.edgeBlurValue = document.getElementById('edgeBlurValue');
+        this.flipHorizontalCheckbox = document.getElementById('flipHorizontal');
+        this.resetSettingsBtn = document.getElementById('resetSettings');
+        this.settingsPanel = document.getElementById('settingsPanel');
+        this.settingsPanel.style.display = 'none';
+        
         this.currentStream = null;
         this.devices = [];
         this.segmenter = null;
@@ -16,6 +28,14 @@ class VirtualBackgroundApp {
         this.isModelLoading = false;
         this.animationFrame = null;
         this.isCameraActive = false;
+        
+        // Bokeh effect settings
+        this.bokehSettings = {
+            foregroundThreshold: 0.5,
+            backgroundBlurAmount: 10,
+            edgeBlurAmount: 3,
+            flipHorizontal: false
+        };
         
         this.init();
     }
@@ -26,6 +46,28 @@ class VirtualBackgroundApp {
             this.cameraBtn.addEventListener('click', () => this.toggleCamera());
             this.cameraSelect.addEventListener('change', () => this.switchCamera());
             this.blurToggleBtn.addEventListener('click', () => this.toggleBlur());
+            
+            // Settings panel event listeners
+            this.foregroundThresholdSlider.addEventListener('input', (e) => {
+                this.bokehSettings.foregroundThreshold = parseFloat(e.target.value);
+                this.foregroundThresholdValue.textContent = e.target.value;
+            });
+            
+            this.backgroundBlurSlider.addEventListener('input', (e) => {
+                this.bokehSettings.backgroundBlurAmount = parseInt(e.target.value);
+                this.backgroundBlurValue.textContent = e.target.value;
+            });
+            
+            this.edgeBlurSlider.addEventListener('input', (e) => {
+                this.bokehSettings.edgeBlurAmount = parseInt(e.target.value);
+                this.edgeBlurValue.textContent = e.target.value;
+            });
+            
+            this.flipHorizontalCheckbox.addEventListener('change', (e) => {
+                this.bokehSettings.flipHorizontal = e.target.checked;
+            });
+            
+            this.resetSettingsBtn.addEventListener('click', () => this.resetSettings());
             
             // Hide camera selector initially
             this.cameraSelect.parentElement.style.display = 'none';
@@ -204,6 +246,7 @@ class VirtualBackgroundApp {
             // Enable blur
             try {
                 await this.loadSegmentationModel();
+                this.settingsPanel.style.display = 'block';
                 this.isBlurEnabled = true;
                 this.blurToggleBtn.textContent = 'Disable Background Blur';
                 this.blurToggleBtn.classList.add('active');
@@ -215,6 +258,7 @@ class VirtualBackgroundApp {
             }
         } else {
             // Disable blur
+            this.settingsPanel.style.display = 'none';
             this.isBlurEnabled = false;
             this.blurToggleBtn.textContent = 'Enable Background Blur';
             this.blurToggleBtn.classList.remove('active');
@@ -228,9 +272,13 @@ class VirtualBackgroundApp {
             return;
         }
 
+        // Set canvas dimensions to match video
+        this.outputCanvas.width = this.video.videoWidth;
+        this.outputCanvas.height = this.video.videoHeight;
+
         // Show canvas and hide video
         this.outputCanvas.style.display = 'block';
-        // this.video.style.display = 'none';
+        this.video.style.visibility = 'hidden';
 
         const processFrame = async () => {
             if (!this.isBlurEnabled || !this.segmenter) {
@@ -264,21 +312,42 @@ class VirtualBackgroundApp {
 
         // Hide canvas and show video
         this.outputCanvas.style.display = 'none';
-        // this.video.style.display = 'block';
+        this.video.style.visibility = 'visible';
     }
 
     async drawBlurredBackground(ctx, segmentation) {
         // Use the built-in TensorFlow.js bodySegmentation.drawBokehEffect method
         const canvas = this.outputCanvas;
-        const foregroundThreshold = 0.5;
-        const backgroundBlurAmount = 10;
-        const edgeBlurAmount = 3;
-        const flipHorizontal = false;
 
         await bodySegmentation.drawBokehEffect(
             canvas, this.video, segmentation, 
-            foregroundThreshold, backgroundBlurAmount, edgeBlurAmount, flipHorizontal
+            this.bokehSettings.foregroundThreshold, 
+            this.bokehSettings.backgroundBlurAmount, 
+            this.bokehSettings.edgeBlurAmount, 
+            this.bokehSettings.flipHorizontal
         );
+    }
+
+    resetSettings() {
+        // Reset settings to defaults
+        this.bokehSettings = {
+            foregroundThreshold: 0.5,
+            backgroundBlurAmount: 10,
+            edgeBlurAmount: 3,
+            flipHorizontal: false
+        };
+        
+        // Update UI elements
+        this.foregroundThresholdSlider.value = this.bokehSettings.foregroundThreshold;
+        this.foregroundThresholdValue.textContent = this.bokehSettings.foregroundThreshold;
+        
+        this.backgroundBlurSlider.value = this.bokehSettings.backgroundBlurAmount;
+        this.backgroundBlurValue.textContent = this.bokehSettings.backgroundBlurAmount;
+        
+        this.edgeBlurSlider.value = this.bokehSettings.edgeBlurAmount;
+        this.edgeBlurValue.textContent = this.bokehSettings.edgeBlurAmount;
+        
+        this.flipHorizontalCheckbox.checked = this.bokehSettings.flipHorizontal;
     }
 
     showLoading(message) {
