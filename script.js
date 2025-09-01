@@ -1,122 +1,43 @@
+import { elements } from './modules/domElements.js';
+import { DeviceManager } from './modules/deviceManager.js';
+import { SegmentationManager } from './modules/segmentation.js';
+import { setupUI } from './modules/ui.js';
+
 class VirtualBackgroundApp {
     constructor() {
-        this.video = document.getElementById('video');
-        this.outputCanvas = document.getElementById('outputCanvas');
-        this.cameraSelect = document.getElementById('cameraSelect');
-        this.cameraBtn = document.getElementById('cameraBtn');
-        this.blurToggleBtn = document.getElementById('blurToggleBtn');
-        this.loadingIndicator = document.getElementById('loadingIndicator');
-        this.loadingText = document.getElementById('loadingText');
-        this.status = document.getElementById('status');
-        
-        // Settings panel elements
-        this.foregroundThresholdSlider = document.getElementById('foregroundThreshold');
-        this.foregroundThresholdValue = document.getElementById('foregroundThresholdValue');
-        this.backgroundBlurSlider = document.getElementById('backgroundBlur');
-        this.backgroundBlurValue = document.getElementById('backgroundBlurValue');
-        this.edgeBlurSlider = document.getElementById('edgeBlur');
-        this.edgeBlurValue = document.getElementById('edgeBlurValue');
-        this.flipHorizontalCheckbox = document.getElementById('flipHorizontal');
-        this.resetSettingsBtn = document.getElementById('resetSettings');
-        this.settingsPanel = document.getElementById('settingsPanel');
-        this.settingsPanel.style.display = 'none';
-        
         this.currentStream = null;
-        this.devices = [];
-        this.segmenter = null;
-        this.isBlurEnabled = false;
-        this.isModelLoading = false;
-        this.animationFrame = null;
-        this.isCameraActive = false;
-        
-        // Bokeh effect settings
+        this.deviceManager = new DeviceManager();
         this.bokehSettings = {
             foregroundThreshold: 0.5,
             backgroundBlurAmount: 10,
             edgeBlurAmount: 3,
             flipHorizontal: false
         };
-        
-        this.init();
-    }
+        this.segmentationManager = new SegmentationManager(this.bokehSettings);
+        this.isCameraActive = false;
+        this.isBlurEnabled = false;
 
-    async init() {
-        try {
-            // Set up event listeners
-            this.cameraBtn.addEventListener('click', () => this.toggleCamera());
-            this.cameraSelect.addEventListener('change', () => this.switchCamera());
-            this.blurToggleBtn.addEventListener('click', () => this.toggleBlur());
-            
-            // Settings panel event listeners
-            this.foregroundThresholdSlider.addEventListener('input', (e) => {
-                this.bokehSettings.foregroundThreshold = parseFloat(e.target.value);
-                this.foregroundThresholdValue.textContent = e.target.value;
-            });
-            
-            this.backgroundBlurSlider.addEventListener('input', (e) => {
-                this.bokehSettings.backgroundBlurAmount = parseInt(e.target.value);
-                this.backgroundBlurValue.textContent = e.target.value;
-            });
-            
-            this.edgeBlurSlider.addEventListener('input', (e) => {
-                this.bokehSettings.edgeBlurAmount = parseInt(e.target.value);
-                this.edgeBlurValue.textContent = e.target.value;
-            });
-            
-            this.flipHorizontalCheckbox.addEventListener('change', (e) => {
-                this.bokehSettings.flipHorizontal = e.target.checked;
-            });
-            
-            this.resetSettingsBtn.addEventListener('click', () => this.resetSettings());
-            
-            // Show camera selector so user can pick a camera before starting the stream.
-            this.cameraSelect.parentElement.style.display = 'flex';
-            // Disable until devices are enumerated, then enable.
-            this.cameraSelect.disabled = true;
-            await this.getCameraDevices();
-            this.cameraSelect.disabled = false;
+        setupUI(this.bokehSettings, {
+            toggleCamera: () => this.toggleCamera(),
+            switchCamera: () => this.switchCamera(),
+            toggleBlur: () => this.toggleBlur()
+        });
 
-            this.updateStatus('Click "Start Camera" to begin. Camera permissions will be requested when you start.', 'inactive');
-        } catch (error) {
-            console.error('Initialization error:', error);
-            this.updateStatus('Error initializing application.', 'error');
-        }
-    }
+        // Populate devices on start
+        this.deviceManager.getCameraDevices()
+            .then(() => { elements.cameraSelect.disabled = false; })
+            .catch(() => { /* ignore */ });
 
-    async getCameraDevices() {
-        try {
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            this.devices = devices.filter(device => device.kind === 'videoinput');
-            
-            // Populate camera select
-            this.cameraSelect.innerHTML = '<option value="">Select Camera...</option>';
-            this.devices.forEach((device, index) => {
-                const option = document.createElement('option');
-                option.value = device.deviceId;
-                option.textContent = device.label || `Camera ${index + 1}`;
-                this.cameraSelect.appendChild(option);
-            });
-            
-            // Auto-select first camera if available
-            if (this.devices.length > 0) {
-                this.cameraSelect.value = this.devices[0].deviceId;
-            }
-        } catch (error) {
-            console.error('Error getting camera devices:', error);
-            this.updateStatus('Error accessing camera list. Please check permissions.', 'error');
-        }
+        elements.status.textContent = 'Click "Start Camera" to begin. Camera permissions will be requested when you start.';
     }
 
     async startCamera() {
         try {
-            // Ensure we have an up-to-date device list (may prompt for permission)
-            await this.getCameraDevices();
-
-            // Use selected device if present, otherwise fall back to first available device
-            let selectedDeviceId = this.cameraSelect.value;
-            if (!selectedDeviceId && this.devices.length > 0) {
-                selectedDeviceId = this.devices[0].deviceId;
-                this.cameraSelect.value = selectedDeviceId;
+            await this.deviceManager.getCameraDevices();
+            let selectedDeviceId = elements.cameraSelect.value;
+            if (!selectedDeviceId && this.deviceManager.devices.length > 0) {
+                selectedDeviceId = this.deviceManager.devices[0].deviceId;
+                elements.cameraSelect.value = selectedDeviceId;
             }
 
             if (!selectedDeviceId) {
@@ -124,83 +45,57 @@ class VirtualBackgroundApp {
                 return;
             }
 
-            // Stop current stream if exists
-            if (this.currentStream) {
-                this.stopCamera();
-            }
+            if (this.currentStream) this.stopCamera();
 
-            const constraints = {
-                video: {
-                    deviceId: { exact: selectedDeviceId },
-                    width: { ideal: 640 },
-                    height: { ideal: 480 }
-                },
-                audio: false
-            };
-
+            const constraints = { video: { deviceId: { exact: selectedDeviceId }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false };
             this.currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-            this.video.srcObject = this.currentStream;
+            elements.video.srcObject = this.currentStream;
 
             this.isCameraActive = true;
-            this.cameraBtn.textContent = 'Stop Camera';
-            this.cameraBtn.classList.remove('start-btn');
-            this.cameraBtn.classList.add('stop-btn');
-            this.cameraSelect.disabled = false;
-            this.blurToggleBtn.disabled = false;
-            
-            // Show camera selector when camera is active
-            this.cameraSelect.parentElement.style.display = 'flex';
+            elements.cameraBtn.textContent = 'Stop Camera';
+            elements.cameraBtn.classList.remove('start-btn');
+            elements.cameraBtn.classList.add('stop-btn');
+            elements.cameraSelect.disabled = false;
+            elements.blurToggleBtn.disabled = false;
+            elements.cameraSelect.parentElement.style.display = 'flex';
 
             this.updateStatus('Camera is active. You can now enable background blur.', 'active');
-        } catch (error) {
-            console.error('Error starting camera:', error);
-            if (error.name === 'NotAllowedError') {
-                this.updateStatus('Camera access denied. Please grant camera permissions and try again.', 'error');
-            } else if (error.name === 'NotFoundError') {
-                this.updateStatus('Camera not found. Please check your camera connection.', 'error');
-            } else {
-                this.updateStatus('Error starting camera. Please try a different camera.', 'error');
-            }
+        } catch (err) {
+            console.error('Error starting camera', err);
+            if (err.name === 'NotAllowedError') this.updateStatus('Camera access denied. Please grant camera permissions and try again.', 'error');
+            else if (err.name === 'NotFoundError') this.updateStatus('Camera not found. Please check your camera connection.', 'error');
+            else this.updateStatus('Error starting camera. Please try a different camera.', 'error');
         }
     }
 
     stopCamera() {
-        // Stop segmentation processing
-        this.stopSegmentation();
-        
+        if (this.segmentationManager) this.segmentationManager.stop();
+
         if (this.currentStream) {
-            // Stop all tracks to properly release the camera
-            this.currentStream.getTracks().forEach(track => {
-                track.stop();
-                console.log('Stopped track:', track.kind);
-            });
+            this.currentStream.getTracks().forEach(t => t.stop());
             this.currentStream = null;
         }
 
-        // Clear the video source
-        this.video.srcObject = null;
-        
-        // Reset button states
+        elements.video.srcObject = null;
         this.isCameraActive = false;
-        this.cameraBtn.textContent = 'Start Camera';
-        this.cameraBtn.classList.remove('stop-btn');
-        this.cameraBtn.classList.add('start-btn');
-        this.blurToggleBtn.disabled = true;
-        this.blurToggleBtn.textContent = 'Enable Background Blur';
-        this.blurToggleBtn.classList.remove('active');
-        
-        // Keep camera selector visible so user can switch or re-open camera without losing selection
-        this.cameraSelect.parentElement.style.display = 'flex';
+        elements.cameraBtn.textContent = 'Start Camera';
+        elements.cameraBtn.classList.remove('stop-btn');
+        elements.cameraBtn.classList.add('start-btn');
+        elements.blurToggleBtn.disabled = true;
+        elements.blurToggleBtn.textContent = 'Enable Background Blur';
+        elements.blurToggleBtn.classList.remove('active');
+        elements.cameraSelect.parentElement.style.display = 'flex';
 
         this.updateStatus('Camera stopped and stream released.', 'inactive');
     }
 
     async switchCamera() {
-        if (this.currentStream && this.cameraSelect.value) {
+        if (this.currentStream && elements.cameraSelect.value) {
             await this.startCamera();
         }
     }
 
+    // Add toggleCamera to match UI handler
     async toggleCamera() {
         if (this.isCameraActive) {
             this.stopCamera();
@@ -210,168 +105,35 @@ class VirtualBackgroundApp {
     }
 
     updateStatus(message, type) {
-        this.status.textContent = message;
-        this.status.className = `status ${type}`;
-    }
-
-    async loadSegmentationModel() {
-        if (this.segmenter || this.isModelLoading) {
-            return this.segmenter;
-        }
-
-        this.isModelLoading = true;
-        this.showLoading('Loading AI model...');
-
-        try {
-            // Load MediaPipe Selfie Segmentation model
-            const model = bodySegmentation.SupportedModels.MediaPipeSelfieSegmentation;
-            const segmenterConfig = {
-                runtime: 'mediapipe',
-                solutionPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1',
-                modelType: 'general'
-            };
-
-            this.segmenter = await bodySegmentation.createSegmenter(model, segmenterConfig);
-            console.log('Segmentation model loaded successfully');
-            
-            this.hideLoading();
-            this.isModelLoading = false;
-            return this.segmenter;
-        } catch (error) {
-            console.error('Error loading segmentation model:', error);
-            this.hideLoading();
-            this.isModelLoading = false;
-            this.updateStatus('Error loading AI model. Please try again.', 'error');
-            throw error;
-        }
+        elements.status.textContent = message;
+        elements.status.className = `status ${type}`;
     }
 
     async toggleBlur() {
-        if (this.isModelLoading) {
-            return;
-        }
-
+        if (this.segmentationManager.isModelLoading) return;
         if (!this.isBlurEnabled) {
-            // Enable blur
             try {
-                await this.loadSegmentationModel();
-                this.settingsPanel.style.display = 'block';
+                await this.segmentationManager.loadModel();
+                elements.settingsPanel.style.display = 'block';
                 this.isBlurEnabled = true;
-                this.blurToggleBtn.textContent = 'Disable Background Blur';
-                this.blurToggleBtn.classList.add('active');
-                this.startSegmentation();
+                elements.blurToggleBtn.textContent = 'Disable Background Blur';
+                elements.blurToggleBtn.classList.add('active');
+                this.segmentationManager.start();
                 this.updateStatus('Background blur enabled. AI is processing video.', 'active');
-            } catch (error) {
-                console.error('Error enabling blur:', error);
+            } catch (err) {
+                console.error('Error enabling blur', err);
                 this.updateStatus('Failed to enable background blur.', 'error');
             }
         } else {
-            // Disable blur
-            this.settingsPanel.style.display = 'none';
+            elements.settingsPanel.style.display = 'none';
             this.isBlurEnabled = false;
-            this.blurToggleBtn.textContent = 'Enable Background Blur';
-            this.blurToggleBtn.classList.remove('active');
-            this.stopSegmentation();
+            elements.blurToggleBtn.textContent = 'Enable Background Blur';
+            elements.blurToggleBtn.classList.remove('active');
+            this.segmentationManager.stop();
             this.updateStatus('Background blur disabled.', 'active');
         }
     }
-
-    startSegmentation() {
-        if (!this.segmenter || !this.isBlurEnabled) {
-            return;
-        }
-
-        // Set canvas dimensions to match video
-        this.outputCanvas.width = this.video.videoWidth;
-        this.outputCanvas.height = this.video.videoHeight;
-
-        // Show canvas and hide video
-        this.outputCanvas.style.display = 'block';
-        this.video.style.visibility = 'hidden';
-
-        const processFrame = async () => {
-            if (!this.isBlurEnabled || !this.segmenter) {
-                return;
-            }
-
-            try {
-                // Get segmentation
-                const segmentation = await this.segmenter.segmentPeople(this.video);
-                
-                // Use the built-in drawBokehEffect method
-                await this.drawBlurredBackground(null, segmentation);
-                
-                // Continue processing
-                this.animationFrame = requestAnimationFrame(processFrame);
-            } catch (error) {
-                console.error('Error processing frame:', error);
-            }
-        };
-
-        processFrame();
-    }
-
-    stopSegmentation() {
-        this.isBlurEnabled = false;
-        
-        if (this.animationFrame) {
-            cancelAnimationFrame(this.animationFrame);
-            this.animationFrame = null;
-        }
-
-        // Hide canvas and show video
-        this.outputCanvas.style.display = 'none';
-        this.video.style.visibility = 'visible';
-    }
-
-    async drawBlurredBackground(ctx, segmentation) {
-        // Use the built-in TensorFlow.js bodySegmentation.drawBokehEffect method
-        const canvas = this.outputCanvas;
-
-        await bodySegmentation.drawBokehEffect(
-            canvas, this.video, segmentation, 
-            this.bokehSettings.foregroundThreshold, 
-            this.bokehSettings.backgroundBlurAmount, 
-            this.bokehSettings.edgeBlurAmount, 
-            this.bokehSettings.flipHorizontal
-        );
-    }
-
-    resetSettings() {
-        // Reset settings to defaults
-        this.bokehSettings = {
-            foregroundThreshold: 0.5,
-            backgroundBlurAmount: 10,
-            edgeBlurAmount: 3,
-            flipHorizontal: false
-        };
-        
-        // Update UI elements
-        this.foregroundThresholdSlider.value = this.bokehSettings.foregroundThreshold;
-        this.foregroundThresholdValue.textContent = this.bokehSettings.foregroundThreshold;
-        
-        this.backgroundBlurSlider.value = this.bokehSettings.backgroundBlurAmount;
-        this.backgroundBlurValue.textContent = this.bokehSettings.backgroundBlurAmount;
-        
-        this.edgeBlurSlider.value = this.bokehSettings.edgeBlurAmount;
-        this.edgeBlurValue.textContent = this.bokehSettings.edgeBlurAmount;
-        
-        this.flipHorizontalCheckbox.checked = this.bokehSettings.flipHorizontal;
-    }
-
-    showLoading(message) {
-        this.loadingText.textContent = message;
-        this.loadingIndicator.style.display = 'flex';
-        this.blurToggleBtn.disabled = true;
-    }
-
-    hideLoading() {
-        this.loadingIndicator.style.display = 'none';
-        this.blurToggleBtn.disabled = false;
-    }
 }
 
-// Initialize the app when the page loads
-document.addEventListener('DOMContentLoaded', () => {
-    new VirtualBackgroundApp();
-});
+// Initialize
+new VirtualBackgroundApp()
