@@ -69,9 +69,13 @@ class VirtualBackgroundApp {
             
             this.resetSettingsBtn.addEventListener('click', () => this.resetSettings());
             
-            // Hide camera selector initially
-            this.cameraSelect.parentElement.style.display = 'none';
-            
+            // Show camera selector so user can pick a camera before starting the stream.
+            this.cameraSelect.parentElement.style.display = 'flex';
+            // Disable until devices are enumerated, then enable.
+            this.cameraSelect.disabled = true;
+            await this.getCameraDevices();
+            this.cameraSelect.disabled = false;
+
             this.updateStatus('Click "Start Camera" to begin. Camera permissions will be requested when you start.', 'inactive');
         } catch (error) {
             console.error('Initialization error:', error);
@@ -105,11 +109,16 @@ class VirtualBackgroundApp {
 
     async startCamera() {
         try {
-            // Get camera devices first (this will request permission)
+            // Ensure we have an up-to-date device list (may prompt for permission)
             await this.getCameraDevices();
-            
-            const selectedDeviceId = this.cameraSelect.value;
-            
+
+            // Use selected device if present, otherwise fall back to first available device
+            let selectedDeviceId = this.cameraSelect.value;
+            if (!selectedDeviceId && this.devices.length > 0) {
+                selectedDeviceId = this.devices[0].deviceId;
+                this.cameraSelect.value = selectedDeviceId;
+            }
+
             if (!selectedDeviceId) {
                 this.updateStatus('Please select a camera first.', 'error');
                 return;
@@ -180,8 +189,8 @@ class VirtualBackgroundApp {
         this.blurToggleBtn.textContent = 'Enable Background Blur';
         this.blurToggleBtn.classList.remove('active');
         
-        // Hide camera selector when camera is stopped
-        this.cameraSelect.parentElement.style.display = 'none';
+        // Keep camera selector visible so user can switch or re-open camera without losing selection
+        this.cameraSelect.parentElement.style.display = 'flex';
 
         this.updateStatus('Camera stopped and stream released.', 'inactive');
     }
